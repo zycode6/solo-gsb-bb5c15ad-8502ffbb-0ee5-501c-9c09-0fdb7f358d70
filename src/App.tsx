@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { Annotation, DocumentData, ExportPayload } from './types'
+import type { Annotation, DocumentData, ExportPayload, MutexRule } from './types'
 import {
   fingerprint,
   makeContext,
@@ -8,6 +8,13 @@ import {
   REASON_LABEL,
 } from './lib/relocation'
 import { buildSegments } from './lib/segments'
+import {
+  detectConflicts,
+  sanitizeIgnoredConflicts,
+  sanitizeMutexRules,
+  validateRule,
+  type ConflictItem,
+} from './lib/conflicts'
 import { loadDocument, saveDocument } from './lib/storage'
 import { clearSelection, elementAtOffset } from './lib/dom'
 import { TextView, type ViewRect } from './components/TextView'
@@ -15,6 +22,8 @@ import { TextEditor } from './components/TextEditor'
 import { Sidebar } from './components/Sidebar'
 import { Popover } from './components/Popover'
 import { AnnotationForm } from './components/AnnotationForm'
+import { ConflictPanel } from './components/ConflictPanel'
+import { MutexRulesEditor } from './components/MutexRulesEditor'
 import { badgeColor } from './lib/segments'
 
 type PopoverState =
@@ -33,11 +42,17 @@ const EMPTY_DOC: DocumentData = {
   title: '未命名文档',
   text: '',
   annotations: [],
+  mutexRules: [],
+  ignoredConflicts: [],
   updatedAt: Date.now(),
 }
 
 function makeId(): string {
   return `a_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+}
+
+function makeRuleId(): string {
+  return `r_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
 }
 
 export default function App() {
@@ -88,6 +103,64 @@ export default function App() {
 
   const rebindTarget = doc.annotations.find((a) => a.id === rebindId) ?? null
   const pendingCount = doc.annotations.filter((a) => a.status === 'pending').length
+
+  // ---------- 冲突审阅 ----------
+
+  const conflicts = useMemo(
+    () => detectConflicts(doc.annotations, doc.mutexRules),
+    [doc.annotations, doc.mutexRules],
+  )
+  const ignoredSignatures = useMemo(
+    () => new Set(doc.ignoredConflicts.map((x) => x.signature)),
+    [doc.ignoredConflicts],
+  )
+  const visibleConflicts = useMemo(
+    () => conflicts.filter((c) => !ignoredSignatures.has(c.signature)),
+    [conflicts, ignoredSignatures],
+  )
+  const ignoredConflictItems = useMemo(
+    () => conflicts.filter((c) => ignoredSignatures.has(c.signature)),
+    [conflicts, ignoredSignatures],
+  )
+
+  const addMutexRule = (a: string, b: string): string | null => {
+    const err = validateRule(a, b, doc.mutexRules)
+    if (err) return err
+    const rule: MutexRule = { id: makeRuleId(), a, b }
+    setDoc((d) => ({ ...d, mutexRules: [...d.mutexRules, rule], updatedAt: Date.now() }))
+    return null
+  }
+
+  const removeMutexRule = (id: string) => {
+    setDoc((d) => ({
+      ...d,
+      mutexRules: d.mutexRules.filter((r) => r.id !== id),
+      updatedAt: Date.now(),
+    }))
+  }
+
+  const ignoreConflict = (c: ConflictItem) => {
+    setDoc((d) =>
+      d.ignoredConflicts.some((x) => x.signature === c.signature)
+        ? d
+        : {
+            ...d,
+            ignoredConflicts: [
+              ...d.ignoredConflicts,
+              { signature: c.signature, ignoredAt: Date.now() },
+            ],
+            updatedAt: Date.now(),
+          },
+    )
+  }
+
+  const restoreConflict = (c: ConflictItem) => {
+    setDoc((d) => ({
+      ...d,
+      ignoredConflicts: d.ignoredConflicts.filter((x) => x.signature !== c.signature),
+      updatedAt: Date.now(),
+    }))
+  }
 
   // ---------- 选区与弹层 ----------
 
@@ -163,7 +236,7 @@ export default function App() {
         (a) => a.status === 'bound' && a.lastRelocation?.reason !== 'failed',
       ).length
       const pending = relocated.filter((a) => a.status === 'pending').length
-      setDoc({ title, text, annotations: relocated, updatedAt: Date.now() })
+      setDoc((d) => ({ ...d, title, text, annotations: relocated, updatedAt: Date.now() }))
       setNotice({ id: Date.now(), auto, pending })
     } else {
       setDoc((d) => ({ ...d, title, text, updatedAt: Date.now() }))
@@ -215,6 +288,15 @@ export default function App() {
     })
   }
 
+  /** 居中弹层打开编辑表单（侧栏与冲突审阅面板共用） */
+  const openEdit = (a: Annotation) => {
+    setPopover({
+      kind: 'edit',
+      id: a.id,
+      rect: { top: -1, bottom: -1, left: -1, right: -1 },
+    })
+  }
+
   // ---------- 导入 / 导出 / 新建 ----------
 
   const exportJson = () => {
@@ -239,6 +321,11 @@ export default function App() {
         lastRelocation: a.lastRelocation ?? null,
         createdAt: new Date(a.createdAt).toISOString(),
         updatedAt: new Date(a.updatedAt).toISOString(),
+      })),
+      mutexRules: doc.mutexRules,
+      ignoredConflicts: doc.ignoredConflicts.map((x) => ({
+        signature: x.signature,
+        ignoredAt: new Date(x.ignoredAt).toISOString(),
       })),
     }
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
@@ -286,6 +373,9 @@ export default function App() {
         title: parsed.document.title,
         text: parsed.document.text,
         annotations,
+        // 旧版本导出文件没有这两个字段，清洗函数会按空配置处理
+        mutexRules: sanitizeMutexRules(parsed.mutexRules),
+        ignoredConflicts: sanitizeIgnoredConflicts(parsed.ignoredConflicts),
         updatedAt: Date.now(),
       })
       setMode('view')
@@ -420,6 +510,9 @@ export default function App() {
             <footer className="content-foot">
               共 {doc.text.length} 字 · {doc.annotations.length} 条标注
               {pendingCount > 0 && <span className="foot-pending">（{pendingCount} 条待处理）</span>}
+              {visibleConflicts.length > 0 && (
+                <span className="foot-conflict">（{visibleConflicts.length} 处标签冲突）</span>
+              )}
               {' '}· 数据自动保存在本浏览器
             </footer>
           </section>
@@ -428,15 +521,29 @@ export default function App() {
             annotations={doc.annotations}
             activeId={activeId}
             onFocus={focusAnnotation}
-            onEdit={(a) =>
-              setPopover({
-                kind: 'edit',
-                id: a.id,
-                rect: { top: -1, bottom: -1, left: -1, right: -1 },
-              })
-            }
+            onEdit={openEdit}
             onRebindStart={startRebind}
             onDelete={(a) => deleteAnnotation(a.id)}
+            topSections={
+              <>
+                <ConflictPanel
+                  text={doc.text}
+                  conflicts={visibleConflicts}
+                  ignored={ignoredConflictItems}
+                  annotations={doc.annotations}
+                  onFocus={focusAnnotation}
+                  onEdit={openEdit}
+                  onIgnore={ignoreConflict}
+                  onRestore={restoreConflict}
+                />
+                <MutexRulesEditor
+                  rules={doc.mutexRules}
+                  suggestions={allTags}
+                  onAdd={addMutexRule}
+                  onRemove={removeMutexRule}
+                />
+              </>
+            }
           />
         </main>
       )}

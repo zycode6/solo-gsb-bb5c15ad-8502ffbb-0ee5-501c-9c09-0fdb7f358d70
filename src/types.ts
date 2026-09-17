@@ -41,10 +41,31 @@ export interface Annotation {
   pendingReason?: string
 }
 
+/** 互斥标签对：两条已绑定标注区间相交且分别命中同一规则时构成冲突 */
+export interface MutexRule {
+  id: string
+  a: string
+  b: string
+}
+
+/**
+ * 一条被忽略的冲突。
+ * 签名 = 两个标注 ID（排序）+ 命中规则 ID 集合（排序），不含位置信息：
+ * 区间重定位不改变签名；标签变化导致命中规则集合变化时签名改变，冲突自动重新出现。
+ */
+export interface IgnoredConflict {
+  signature: string
+  ignoredAt: number
+}
+
 export interface DocumentData {
   title: string
   text: string
   annotations: Annotation[]
+  /** 用户配置的互斥标签对 */
+  mutexRules: MutexRule[]
+  /** 已忽略冲突的签名记录 */
+  ignoredConflicts: IgnoredConflict[]
   updatedAt: number
 }
 
@@ -71,4 +92,8 @@ export interface ExportPayload {
     createdAt: string
     updatedAt: string
   }>
+  /** 互斥标签对配置（旧版本导出文件可能缺失，导入时按空数组处理） */
+  mutexRules: MutexRule[]
+  /** 已忽略冲突签名（旧版本导出文件可能缺失，导入时按空数组处理） */
+  ignoredConflicts: Array<{ signature: string; ignoredAt: string }>
 }

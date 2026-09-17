@@ -103,8 +103,122 @@ assert.ok(html2.includes('待处理'), '应渲染待处理分区')
 assert.ok(html2.includes('重新选择片段'), 'pending 标注应有重绑按钮')
 assert.ok(html2.includes('备注一'), '应渲染备注')
 assert.ok(html2.includes('#重点'), '应渲染标签')
+assert.ok(html2.includes('互斥规则'), '旧数据（无规则字段）也应渲染规则配置区')
+assert.ok(!html2.includes('冲突审阅（'), '未配置规则时不渲染冲突审阅面板')
 console.log('  ✓ 含 bound/pending 标注的文档渲染成功')
 
 root2.unmount()
 container2.remove()
+
+// 配置互斥规则 + 两条区间相交的冲突标注 → 冲突审阅面板
+const saved3 = {
+  title: '冲突文档',
+  text: '甲乙丙丁戊己庚辛壬癸子丑寅卯辰巳午未申酉戌亥',
+  updatedAt: Date.now(),
+  mutexRules: [{ id: 'r1', a: '重点', b: '存疑' }],
+  ignoredConflicts: [],
+  annotations: [
+    {
+      id: 'a_x',
+      quote: '丙丁戊己',
+      start: 2,
+      end: 6,
+      note: '',
+      tags: ['重点'],
+      status: 'bound',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      contextBefore: '甲乙',
+      contextAfter: '庚辛',
+    },
+    {
+      id: 'a_y',
+      quote: '戊己庚辛',
+      start: 4,
+      end: 8,
+      note: '',
+      tags: ['存疑'],
+      status: 'bound',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      contextBefore: '丙丁',
+      contextAfter: '壬癸',
+    },
+  ],
+}
+localStorage.setItem('anchor-annotation-console:v1', JSON.stringify(saved3))
+
+const container3 = document.createElement('div')
+container3.id = 'root3'
+document.body.appendChild(container3)
+const root3 = createRoot(container3)
+
+await new Promise<void>((resolve) => {
+  root3.render(
+    React.createElement(React.StrictMode, null, React.createElement(App)),
+  )
+  setTimeout(resolve, 100)
+})
+
+const html3 = container3.innerHTML
+assert.ok(html3.includes('冲突审阅（1）'), '应渲染 1 条待审阅冲突')
+assert.ok(html3.includes('交叠 2 字'), '应显示交叠字数')
+assert.ok(html3.includes('戊己'), '应展示交叠原文')
+assert.ok(html3.includes('#重点 ↔ #存疑'), '应列出命中的互斥规则')
+assert.ok(html3.includes('标记为忽略'), '应提供忽略操作')
+assert.ok(html3.includes('1 处标签冲突'), '底部状态栏应显示冲突计数')
+console.log('  ✓ 冲突审阅面板渲染成功（规则、交叠原文、操作齐全）')
+
+// ---------- 交互：忽略 → 签名入本地 → 恢复 → 重现 ----------
+
+function findButton(rootEl: HTMLElement, text: string): HTMLButtonElement {
+  const btn = [...rootEl.querySelectorAll('button')].find((b) =>
+    (b.textContent ?? '').includes(text),
+  )
+  assert.ok(btn, `应存在按钮「${text}」`)
+  return btn as HTMLButtonElement
+}
+
+async function flush() {
+  await new Promise((r) => setTimeout(r, 50))
+}
+
+// 点击「标记为忽略」
+findButton(container3, '标记为忽略').dispatchEvent(
+  new window.MouseEvent('click', { bubbles: true }),
+)
+await flush()
+
+const htmlAfterIgnore = container3.innerHTML
+assert.ok(htmlAfterIgnore.includes('冲突审阅（0）'), '忽略后待审阅数应为 0')
+assert.ok(htmlAfterIgnore.includes('已忽略（1）'), '应出现已忽略分组')
+const persisted = JSON.parse(localStorage.getItem('anchor-annotation-console:v1')!)
+assert.strictEqual(persisted.ignoredConflicts.length, 1, '忽略签名应写入本地存储')
+assert.ok(
+  persisted.ignoredConflicts[0].signature.includes('a_x') &&
+    persisted.ignoredConflicts[0].signature.includes('a_y') &&
+    persisted.ignoredConflicts[0].signature.includes('r1'),
+  '签名应包含两个标注 ID 与命中规则 ID',
+)
+console.log('  ✓ 标记为忽略：面板归零，签名（标注对+规则集合）已持久化')
+
+// 展开已忽略并恢复
+findButton(container3, '已忽略（1）').dispatchEvent(
+  new window.MouseEvent('click', { bubbles: true }),
+)
+await flush()
+findButton(container3, '恢复审阅').dispatchEvent(
+  new window.MouseEvent('click', { bubbles: true }),
+)
+await flush()
+assert.ok(container3.innerHTML.includes('冲突审阅（1）'), '恢复后冲突应重新出现')
+assert.strictEqual(
+  JSON.parse(localStorage.getItem('anchor-annotation-console:v1')!).ignoredConflicts.length,
+  0,
+  '恢复后忽略记录应清除',
+)
+console.log('  ✓ 恢复审阅：冲突重新出现，忽略记录清除')
+
+root3.unmount()
+container3.remove()
 console.log('\n全部渲染冒烟测试通过')

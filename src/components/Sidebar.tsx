@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import type { Annotation } from '../types'
 import { REASON_LABEL } from '../lib/relocation'
 import { badgeColor } from '../lib/segments'
@@ -9,6 +10,8 @@ interface Props {
   onEdit: (a: Annotation) => void
   onRebindStart: (a: Annotation) => void
   onDelete: (a: Annotation) => void
+  /** 渲染在待处理/标注列表之前的额外分区（如冲突审阅、互斥规则） */
+  topSections?: ReactNode
 }
 
 function formatTime(ts: number): string {
@@ -99,6 +102,7 @@ export function Sidebar(props: Props) {
 
   return (
     <aside className="sidebar">
+      {props.topSections}
       {pending.length > 0 && (
         <section className="side-section">
           <h2 className="side-heading side-heading-pending">

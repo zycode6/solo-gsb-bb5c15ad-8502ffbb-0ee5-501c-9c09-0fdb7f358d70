@@ -461,6 +461,173 @@ button {
   margin: 9px 0 0 16px;
 }
 
+/* ---------- 冲突审阅 ---------- */
+
+.side-heading-conflict {
+  color: var(--danger);
+}
+
+.conflict-item {
+  background: #fff;
+  border: 1px solid #f0c2c2;
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+
+.conflict-item-ignored {
+  border-color: var(--line);
+  opacity: 0.85;
+}
+
+.conflict-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.conflict-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--danger);
+}
+
+.conflict-item-ignored .conflict-title {
+  color: var(--ink-soft);
+}
+
+.conflict-rules {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.conflict-rule {
+  font-size: 11.5px;
+  color: #8c2f2f;
+  background: #fdeeee;
+  border-radius: 5px;
+  padding: 1px 7px;
+}
+
+.conflict-overlap {
+  margin: 8px 0 0;
+  padding: 6px 10px;
+  border-left: 3px solid var(--danger);
+  background: #fdf6f6;
+  border-radius: 0 8px 8px 0;
+  font-size: 12.5px;
+  line-height: 1.7;
+  max-height: 84px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.conflict-ann {
+  margin-top: 8px;
+  border-top: 1px dashed var(--line);
+  padding-top: 8px;
+}
+
+.conflict-ann-main {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.conflict-ann-quote {
+  font-size: 12.5px;
+  line-height: 1.6;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.conflict-ann-foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 6px 0 0 16px;
+}
+
+.conflict-ignored-toggle {
+  border: 0;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.conflict-ignored-toggle:hover {
+  color: var(--ink);
+}
+
+.conflict-ignored .conflict-item {
+  margin-top: 8px;
+}
+
+/* ---------- 互斥规则 ---------- */
+
+.rule-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.rule-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12.5px;
+}
+
+.rule-sep {
+  color: var(--ink-faint);
+}
+
+.rule-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rule-form input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 12.5px;
+  font-family: inherit;
+  outline: none;
+}
+
+.rule-form input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(47, 107, 255, 0.15);
+}
+
+.rule-error {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.foot-conflict {
+  color: var(--danger);
+  font-weight: 600;
+}
+
 /* ---------- 弹层表单 ---------- */
 
 .popover {
