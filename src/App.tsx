@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { Annotation, DocumentData, ExportPayload } from './types'
+import type {
+  Annotation,
+  ConflictRule,
+  DocumentData,
+  ExportPayload,
+  IgnoredConflict,
+} from './types'
 import {
   fingerprint,
   makeContext,
@@ -10,11 +16,22 @@ import {
 import { buildSegments } from './lib/segments'
 import { loadDocument, saveDocument } from './lib/storage'
 import { clearSelection, elementAtOffset } from './lib/dom'
+import {
+  activeConflictRanges,
+  conflictIgnoredKey,
+  detectConflicts,
+  ignoredKey,
+  normalizeIgnored,
+  normalizeRules,
+  pruneIgnored,
+  type ConflictItem,
+} from './lib/conflicts'
 import { TextView, type ViewRect } from './components/TextView'
 import { TextEditor } from './components/TextEditor'
 import { Sidebar } from './components/Sidebar'
 import { Popover } from './components/Popover'
 import { AnnotationForm } from './components/AnnotationForm'
+import { ConflictRuleEditor } from './components/ConflictRuleEditor'
 import { badgeColor } from './lib/segments'
 
 type PopoverState =
@@ -22,6 +39,7 @@ type PopoverState =
   | { kind: 'inspect'; ids: string[]; rect: ViewRect }
   | { kind: 'edit'; id: string; rect: ViewRect }
   | { kind: 'rebind-confirm'; range: { start: number; end: number }; rect: ViewRect }
+  | { kind: 'rules' }
 
 interface Notice {
   id: number
@@ -33,6 +51,8 @@ const EMPTY_DOC: DocumentData = {
   title: '未命名文档',
   text: '',
   annotations: [],
+  conflictRules: [],
+  ignoredConflicts: [],
   updatedAt: Date.now(),
 }
 
@@ -51,10 +71,13 @@ export default function App() {
     () => (initialLoadedDoc.current?.text ? 'view' : 'edit'),
   )
   const [activeId, setActiveId] = useState<string | null>(null)
+  /** 从冲突项定位时，双方同时高亮 */
+  const [activePairIds, setActivePairIds] = useState<[string, string] | null>(null)
   const [popover, setPopover] = useState<PopoverState | null>(null)
   const [rebindId, setRebindId] = useState<string | null>(null)
   const [notice, setNotice] = useState<Notice | null>(null)
   const rootElRef = useRef<HTMLElement | null>(null)
+  const conflictSectionRef = useRef<HTMLElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // 本地持久化
@@ -88,6 +111,20 @@ export default function App() {
 
   const rebindTarget = doc.annotations.find((a) => a.id === rebindId) ?? null
   const pendingCount = doc.annotations.filter((a) => a.status === 'pending').length
+
+  // ---------- 冲突检测 ----------
+
+  const conflicts = useMemo(
+    () => detectConflicts(doc.annotations, doc.conflictRules, doc.ignoredConflicts),
+    [doc.annotations, doc.conflictRules, doc.ignoredConflicts],
+  )
+  const activeConflictCount = conflicts.filter((c) => !c.ignored).length
+  const conflictRanges = useMemo(() => activeConflictRanges(conflicts), [conflicts])
+  const highlightIds: string[] = activePairIds
+    ? [...activePairIds]
+    : activeId
+      ? [activeId]
+      : []
 
   // ---------- 选区与弹层 ----------
 
@@ -141,14 +178,64 @@ export default function App() {
   }
 
   const deleteAnnotation = (id: string) => {
-    setDoc((d) => ({
-      ...d,
-      annotations: d.annotations.filter((a) => a.id !== id),
-      updatedAt: Date.now(),
-    }))
+    setDoc((d) => {
+      const annotations = d.annotations.filter((a) => a.id !== id)
+      // 被删标注参与的忽略签名一并失效
+      const ignoredConflicts = pruneIgnored(
+        d.ignoredConflicts,
+        annotations,
+        d.conflictRules,
+      )
+      return { ...d, annotations, ignoredConflicts, updatedAt: Date.now() }
+    })
     if (activeId === id) setActiveId(null)
+    if (activePairIds?.includes(id)) setActivePairIds(null)
     if (rebindId === id) setRebindId(null)
     setPopover(null)
+  }
+
+  // ---------- 冲突审阅 ----------
+
+  const saveConflictRules = (rules: ConflictRule[]) => {
+    setDoc((d) => ({
+      ...d,
+      conflictRules: rules,
+      // 被删规则导致的悬空忽略记录清理；引用仍存在规则的记录保留
+      ignoredConflicts: pruneIgnored(d.ignoredConflicts, d.annotations, rules),
+      updatedAt: Date.now(),
+    }))
+    setPopover(null)
+  }
+
+  const ignoreConflict = (c: ConflictItem) => {
+    const rec: IgnoredConflict = {
+      annotationIds: [...c.annotationIds] as [string, string],
+      ruleIds: c.rules.map((r) => r.id).sort(),
+      createdAt: Date.now(),
+    }
+    setDoc((d) => {
+      // 幂等：同签名不重复写入
+      const key = ignoredKey(rec.annotationIds, rec.ruleIds)
+      const others = d.ignoredConflicts.filter(
+        (x) => ignoredKey(x.annotationIds, x.ruleIds) !== key,
+      )
+      return { ...d, ignoredConflicts: [...others, rec], updatedAt: Date.now() }
+    })
+  }
+
+  const unignoreConflict = (c: ConflictItem) => {
+    const key = conflictIgnoredKey(c)
+    setDoc((d) => ({
+      ...d,
+      ignoredConflicts: d.ignoredConflicts.filter(
+        (x) => ignoredKey(x.annotationIds, x.ruleIds) !== key,
+      ),
+      updatedAt: Date.now(),
+    }))
+  }
+
+  const scrollToConflicts = () => {
+    conflictSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
   // ---------- 编辑原文与重定位 ----------
@@ -163,7 +250,13 @@ export default function App() {
         (a) => a.status === 'bound' && a.lastRelocation?.reason !== 'failed',
       ).length
       const pending = relocated.filter((a) => a.status === 'pending').length
-      setDoc({ title, text, annotations: relocated, updatedAt: Date.now() })
+      setDoc((d) => ({
+        ...d,
+        title,
+        text,
+        annotations: relocated,
+        updatedAt: Date.now(),
+      }))
       setNotice({ id: Date.now(), auto, pending })
     } else {
       setDoc((d) => ({ ...d, title, text, updatedAt: Date.now() }))
@@ -172,6 +265,7 @@ export default function App() {
     setMode('view')
     setPopover(null)
     setActiveId(null)
+    setActivePairIds(null)
     clearSelection()
   }
 
@@ -206,13 +300,25 @@ export default function App() {
 
   // ---------- 定位 ----------
 
-  const focusAnnotation = (a: Annotation) => {
-    if (a.status !== 'bound') return
-    setActiveId(a.id)
+  const scrollOffsetIntoView = (offset: number) => {
     requestAnimationFrame(() => {
-      const el = elementAtOffset(rootElRef.current as HTMLElement, a.start)
+      const el = elementAtOffset(rootElRef.current as HTMLElement, offset)
       el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     })
+  }
+
+  const focusAnnotation = (a: Annotation) => {
+    if (a.status !== 'bound') return
+    setActivePairIds(null)
+    setActiveId(a.id)
+    scrollOffsetIntoView(a.start)
+  }
+
+  /** 定位冲突双方：两个标注同时高亮，滚动到交叠起点 */
+  const focusConflict = (c: ConflictItem) => {
+    setActiveId(null)
+    setActivePairIds([...c.annotationIds] as [string, string])
+    scrollOffsetIntoView(c.overlapStart)
   }
 
   // ---------- 导入 / 导出 / 新建 ----------
@@ -227,6 +333,17 @@ export default function App() {
         text: doc.text,
         annotationCount: doc.annotations.length,
       },
+      conflictRules: doc.conflictRules.map((r) => ({
+        id: r.id,
+        tagA: r.tagA,
+        tagB: r.tagB,
+        createdAt: new Date(r.createdAt).toISOString(),
+      })),
+      ignoredConflicts: doc.ignoredConflicts.map((g) => ({
+        annotationIds: [...g.annotationIds] as [string, string],
+        ruleIds: [...g.ruleIds],
+        createdAt: new Date(g.createdAt).toISOString(),
+      })),
       annotations: doc.annotations.map((a) => ({
         id: a.id,
         status: a.status,
@@ -282,16 +399,25 @@ export default function App() {
         pendingReason: x.pendingReason ?? undefined,
         lastRelocation: x.lastRelocation ?? undefined,
       }))
+      const conflictRules = normalizeRules(parsed.conflictRules)
       setDoc({
         title: parsed.document.title,
         text: parsed.document.text,
         annotations,
+        // 旧版导出文件不含冲突配置：无损补空；忽略记录引用已删标注/规则的在此剔除
+        conflictRules,
+        ignoredConflicts: pruneIgnored(
+          normalizeIgnored(parsed.ignoredConflicts),
+          annotations,
+          conflictRules,
+        ),
         updatedAt: Date.now(),
       })
       setMode('view')
       setPopover(null)
       setRebindId(null)
       setActiveId(null)
+      setActivePairIds(null)
     } catch {
       alert('文件解析失败，请确认是有效的 JSON 导出文件。')
     } finally {
@@ -311,6 +437,7 @@ export default function App() {
     setPopover(null)
     setRebindId(null)
     setActiveId(null)
+    setActivePairIds(null)
   }
 
   // ---------- 渲染 ----------
@@ -337,6 +464,16 @@ export default function App() {
           ) : (
             <button className="btn btn-ghost" onClick={() => setMode('view')} disabled={!doc.text}>
               返回查看
+            </button>
+          )}
+          {mode === 'view' && (
+            <button
+              className={`btn ${activeConflictCount > 0 ? 'btn-warn' : 'btn-ghost'}`}
+              onClick={scrollToConflicts}
+              title="查看互斥标签的区间交叠冲突"
+            >
+              冲突审阅
+              {activeConflictCount > 0 && <span className="topbar-count">{activeConflictCount}</span>}
             </button>
           )}
           <button className="btn btn-ghost" onClick={() => fileInputRef.current?.click()}>
@@ -408,8 +545,9 @@ export default function App() {
               <TextView
                 text={doc.text}
                 segments={segments}
-                activeIds={activeId ? [activeId] : []}
+                activeIds={highlightIds}
                 rebinding={!!rebindId}
+                conflictRanges={conflictRanges}
                 onSelect={handleSelect}
                 onInspect={handleInspect}
                 registerRef={(el) => {
@@ -420,13 +558,18 @@ export default function App() {
             <footer className="content-foot">
               共 {doc.text.length} 字 · {doc.annotations.length} 条标注
               {pendingCount > 0 && <span className="foot-pending">（{pendingCount} 条待处理）</span>}
+              {activeConflictCount > 0 && <span className="foot-conflict">（{activeConflictCount} 条冲突待审阅）</span>}
               {' '}· 数据自动保存在本浏览器
             </footer>
           </section>
 
           <Sidebar
+            ref={conflictSectionRef}
+            text={doc.text}
             annotations={doc.annotations}
-            activeId={activeId}
+            activeId={activeId ?? activePairIds?.[0] ?? null}
+            conflictRules={doc.conflictRules}
+            conflicts={conflicts}
             onFocus={focusAnnotation}
             onEdit={(a) =>
               setPopover({
@@ -437,13 +580,24 @@ export default function App() {
             }
             onRebindStart={startRebind}
             onDelete={(a) => deleteAnnotation(a.id)}
+            onFocusOverlap={focusConflict}
+            onIgnore={ignoreConflict}
+            onUnignore={unignoreConflict}
+            onConfigureRules={() => setPopover({ kind: 'rules' })}
           />
         </main>
       )}
 
       {/* 浮动面板 */}
       {popover && (
-        <Popover rect={popover.rect} onClose={() => setPopover(null)}>
+        <Popover
+          rect={
+            popover.kind === 'rules'
+              ? { top: -1, bottom: -1, left: -1, right: -1 }
+              : popover.rect
+          }
+          onClose={() => setPopover(null)}
+        >
           {popover.kind === 'create' && (
             <AnnotationForm
               mode="create"
@@ -529,6 +683,14 @@ export default function App() {
                 )
               })}
             </div>
+          )}
+          {popover.kind === 'rules' && (
+            <ConflictRuleEditor
+              rules={doc.conflictRules}
+              allTags={allTags}
+              onCancel={() => setPopover(null)}
+              onSave={saveConflictRules}
+            />
           )}
         </Popover>
       )}

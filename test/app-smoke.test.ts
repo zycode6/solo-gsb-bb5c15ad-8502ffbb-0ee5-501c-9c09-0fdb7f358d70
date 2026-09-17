@@ -82,7 +82,6 @@ saved.annotations[0].start = saved.text.indexOf('重点片段') - 1
 saved.annotations[0].end = saved.annotations[0].start + 6
 
 localStorage.setItem('anchor-annotation-console:v1', JSON.stringify(saved))
-
 // 重新挂载，让 App 从 localStorage 读取初始状态
 root.unmount()
 const container2 = document.createElement('div')
@@ -105,6 +104,134 @@ assert.ok(html2.includes('备注一'), '应渲染备注')
 assert.ok(html2.includes('#重点'), '应渲染标签')
 console.log('  ✓ 含 bound/pending 标注的文档渲染成功')
 
+// 第三个场景：互斥规则 + 一对冲突标注 + 一条已忽略冲突
+const conflictText = '甲乙丙丁戊己庚辛壬癸'.repeat(6)
+const pos1 = conflictText.indexOf('丁戊')
+const pos2 = conflictText.indexOf('戊己') // 与上一区间在「戊」上交叠
+const savedConflicts = {
+  title: '冲突文档',
+  text: conflictText,
+  updatedAt: Date.now(),
+  annotations: [
+    {
+      id: 'c_pos',
+      quote: conflictText.slice(pos1, pos1 + 2),
+      start: pos1,
+      end: pos1 + 2,
+      note: '',
+      tags: ['正面'],
+      status: 'bound',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      contextBefore: '',
+      contextAfter: '',
+    },
+    {
+      id: 'c_neg',
+      quote: conflictText.slice(pos2, pos2 + 2),
+      start: pos2,
+      end: pos2 + 2,
+      note: '',
+      tags: ['反面'],
+      status: 'bound',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      contextBefore: '',
+      contextAfter: '',
+    },
+    {
+      id: 'c_ig1',
+      quote: conflictText.slice(0, 3),
+      start: 0,
+      end: 3,
+      note: '',
+      tags: ['褒义'],
+      status: 'bound',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      contextBefore: '',
+      contextAfter: '',
+    },
+    {
+      id: 'c_ig2',
+      quote: conflictText.slice(1, 4),
+      start: 1,
+      end: 4,
+      note: '',
+      tags: ['贬义'],
+      status: 'bound',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      contextBefore: '',
+      contextAfter: '',
+    },
+  ],
+  conflictRules: [
+    { id: 'rule_pn', tagA: '正面', tagB: '反面', createdAt: Date.now() },
+    { id: 'rule_bd', tagA: '褒义', tagB: '贬义', createdAt: Date.now() },
+  ],
+  ignoredConflicts: [
+    { annotationIds: ['c_ig1', 'c_ig2'], ruleIds: ['rule_bd'], createdAt: Date.now() },
+  ],
+}
+
+localStorage.setItem('anchor-annotation-console:v1', JSON.stringify(savedConflicts))
 root2.unmount()
-container2.remove()
+const container3 = document.createElement('div')
+container3.id = 'root3'
+document.body.appendChild(container3)
+const root3 = createRoot(container3)
+
+await new Promise<void>((resolve) => {
+  root3.render(
+    React.createElement(React.StrictMode, null, React.createElement(App)),
+  )
+  setTimeout(resolve, 100)
+})
+
+const html3 = container3.innerHTML
+assert.ok(html3.includes('冲突审阅'), '应渲染冲突审阅分区')
+assert.ok(html3.includes('正面 ⇄ 反面'), '应列出冲突命中的规则')
+assert.ok(html3.includes('交叠原文'), '应展示交叠原文')
+assert.ok(html3.includes('忽略此冲突'), '应提供忽略操作')
+assert.ok(html3.includes('已忽略（1）'), '已忽略冲突折叠区应计数')
+assert.ok(html3.includes('hl-conflict'), '未忽略冲突的交叠段应有冲突高亮类')
+assert.ok(html3.includes('冲突审阅'), '顶栏应出现冲突审阅入口')
+console.log('  ✓ 冲突审阅面板（含忽略折叠与交叠高亮）渲染成功')
+
+// 旧版数据（无 conflictRules / ignoredConflicts 字段）应无损加载
+const legacy = {
+  title: '旧文档',
+  text: '一二三四五六',
+  updatedAt: Date.now(),
+  annotations: [],
+}
+localStorage.setItem('anchor-annotation-console:v1', JSON.stringify(legacy))
+root3.unmount()
+const container4 = document.createElement('div')
+container4.id = 'root4'
+document.body.appendChild(container4)
+const root4 = createRoot(container4)
+
+await new Promise<void>((resolve) => {
+  root4.render(
+    React.createElement(React.StrictMode, null, React.createElement(App)),
+  )
+  setTimeout(resolve, 100)
+})
+
+const html4 = container4.innerHTML
+assert.ok(html4.includes('旧文档'), '旧版数据应正常加载标题')
+assert.ok(html4.includes('冲突审阅'), '旧版数据应补出冲突审阅分区')
+assert.ok(html4.includes('尚未配置互斥标签对'), '旧版数据应显示未配置规则提示')
+// 保存回 localStorage 时应自动补齐新字段且不破坏原有数据
+const reparsed = JSON.parse(localStorage.getItem('anchor-annotation-console:v1')!)
+assert.ok(Array.isArray(reparsed.conflictRules) && reparsed.conflictRules.length === 0)
+assert.ok(Array.isArray(reparsed.ignoredConflicts) && reparsed.ignoredConflicts.length === 0)
+assert.strictEqual(reparsed.text, '一二三四五六')
+console.log('  ✓ 旧数据无损兼容并自动补齐冲突字段')
+
+root4.unmount()
+container4.remove()
+container3.remove()
 console.log('\n全部渲染冒烟测试通过')

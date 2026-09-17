@@ -41,10 +41,34 @@ export interface Annotation {
   pendingReason?: string
 }
 
+/** 互斥标签对规则：两条已绑定标注区间有字符交集，且标签分别命中同一规则的两侧时构成冲突 */
+export interface ConflictRule {
+  /** 稳定 ID，忽略签名以此标识「命中规则集合」 */
+  id: string
+  tagA: string
+  tagB: string
+  createdAt: number
+}
+
+/**
+ * 已忽略冲突的签名：
+ * 两个标注 ID（按字典序）+ 命中规则 ID 集合（排序）。
+ * 不含区间信息——区间重定位后忽略仍然有效；标签 / 规则变化导致集合改变时自动重新出现。
+ */
+export interface IgnoredConflict {
+  annotationIds: [string, string]
+  ruleIds: string[]
+  createdAt: number
+}
+
 export interface DocumentData {
   title: string
   text: string
   annotations: Annotation[]
+  /** 互斥标签对配置，随文档本地保存 */
+  conflictRules: ConflictRule[]
+  /** 已忽略冲突的签名记录 */
+  ignoredConflicts: IgnoredConflict[]
   updatedAt: number
 }
 
@@ -58,6 +82,17 @@ export interface ExportPayload {
     text: string
     annotationCount: number
   }
+  conflictRules: Array<{
+    id: string
+    tagA: string
+    tagB: string
+    createdAt: string
+  }>
+  ignoredConflicts: Array<{
+    annotationIds: [string, string]
+    ruleIds: string[]
+    createdAt: string
+  }>
   annotations: Array<{
     id: string
     status: AnnotationStatus

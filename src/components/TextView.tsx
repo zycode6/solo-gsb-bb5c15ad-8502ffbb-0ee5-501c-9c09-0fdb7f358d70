@@ -2,6 +2,7 @@ import { useRef } from 'react'
 import type { TextSegment } from '../lib/segments'
 import { blendedColor } from '../lib/segments'
 import { selectionToOffsets } from '../lib/dom'
+import { isConflictSegment } from '../lib/conflicts'
 
 export interface ViewRect {
   top: number
@@ -15,6 +16,8 @@ interface Props {
   segments: TextSegment[]
   activeIds: string[]
   rebinding: boolean
+  /** 未忽略冲突的交叠区间（已排序），落在其内的段加冲突描边 */
+  conflictRanges: Array<{ start: number; end: number }>
   onSelect: (range: { start: number; end: number }, rect: ViewRect) => void
   onInspect: (ids: string[], rect: ViewRect) => void
   registerRef: (el: HTMLElement | null) => void
@@ -25,6 +28,7 @@ export function TextView({
   segments,
   activeIds,
   rebinding,
+  conflictRanges,
   onSelect,
   onInspect,
   registerRef,
@@ -95,13 +99,14 @@ export function TextView({
           return <span key={i}>{slice}</span>
         }
         const isActive = seg.annotationIds.some((id) => activeIds.includes(id))
+        const isConflict = isConflictSegment(conflictRanges, seg.start, seg.end)
         return (
           <mark
             key={i}
             data-start={seg.start}
             data-end={seg.end}
             data-ids={seg.annotationIds.join(',')}
-            className={isActive ? 'hl hl-active' : 'hl'}
+            className={`hl ${isActive ? 'hl-active' : ''} ${isConflict ? 'hl-conflict' : ''}`}
             style={{ backgroundColor: blendedColor(seg.annotationIds) }}
           >
             {slice}

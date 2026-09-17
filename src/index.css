@@ -244,6 +244,15 @@ button {
   box-shadow: 0 0 0 3px rgba(47, 107, 255, 0.25);
 }
 
+/* 冲突交叠：红色波浪下划线 + 淡红描边 */
+.hl-conflict {
+  text-decoration: underline wavy var(--danger) 1.5px;
+  text-underline-offset: 4px;
+  box-shadow:
+    var(--hl-shadow),
+    inset 0 0 0 1.5px rgba(216, 58, 58, 0.55);
+}
+
 .text-empty {
   text-align: center;
   color: var(--ink-faint);
@@ -697,6 +706,254 @@ button {
 }
 .toast-close:hover {
   opacity: 1;
+}
+
+/* ---------- 冲突审阅 ---------- */
+
+.side-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.side-heading-row .side-heading {
+  margin: 0;
+}
+
+.side-heading-conflict {
+  color: var(--danger);
+}
+
+.conflict-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  margin-left: 6px;
+  border-radius: 9px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.topbar-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 5px;
+  margin-left: 5px;
+  border-radius: 9px;
+  background: #fff;
+  color: var(--danger);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.foot-conflict {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.conflict-item {
+  background: #fff;
+  border: 1px solid #f0c2c2;
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+
+.conflict-ignored {
+  opacity: 0.62;
+  border-color: var(--line);
+}
+
+.conflict-rules {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.conflict-rule-pill {
+  font-size: 11.5px;
+  color: #a52727;
+  background: #fdeeee;
+  border: 1px solid #f3c9c9;
+  border-radius: 5px;
+  padding: 1px 7px;
+}
+
+.conflict-rule-count {
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.conflict-sides {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.conflict-side {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 8px;
+}
+
+.conflict-side-active {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(47, 107, 255, 0.18);
+}
+
+.conflict-side-head {
+  display: flex;
+  gap: 6px;
+}
+
+.conflict-side-quote {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--ink);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+.conflict-side .ann-tags {
+  margin: 5px 0 0 14px;
+}
+
+.conflict-side-actions {
+  display: flex;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.conflict-vs {
+  align-self: center;
+  color: var(--ink-faint);
+  font-size: 13px;
+}
+
+.conflict-overlap {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin-top: 8px;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.conflict-overlap-label {
+  flex-shrink: 0;
+  color: var(--ink-faint);
+}
+
+.conflict-overlap-quote {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  text-align: left;
+  color: #a52727;
+  font: inherit;
+  cursor: pointer;
+  word-break: break-word;
+}
+.conflict-overlap-quote:hover {
+  text-decoration: underline;
+}
+
+.conflict-item-actions {
+  display: flex;
+  margin-top: 8px;
+}
+
+.conflict-ignored-fold {
+  margin-top: 10px;
+  font-size: 12.5px;
+  color: var(--ink-faint);
+}
+.conflict-ignored-fold summary {
+  cursor: pointer;
+  margin-bottom: 8px;
+}
+
+/* ---------- 互斥规则配置弹层 ---------- */
+
+.conflict-rule-editor {
+  display: flex;
+  flex-direction: column;
+}
+
+.rule-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.rule-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 2px;
+}
+
+.rule-input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 13.5px;
+  font-family: inherit;
+  outline: none;
+}
+.rule-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(47, 107, 255, 0.15);
+}
+
+.rule-row-bad .rule-input {
+  border-color: var(--danger);
+}
+.rule-row-dup .rule-input {
+  border-color: var(--warn);
+}
+
+.rule-x {
+  color: var(--ink-faint);
+  font-size: 14px;
+}
+
+.rule-del {
+  font-size: 17px;
+  padding: 2px 5px;
+}
+
+.rule-row-msg {
+  position: absolute;
+  bottom: -15px;
+  left: 2px;
+  font-size: 11px;
+  color: var(--danger);
+}
+
+.rule-add {
+  align-self: flex-start;
+  margin-bottom: 6px;
 }
 
 /* ---------- 响应式 ---------- */

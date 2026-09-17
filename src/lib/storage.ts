@@ -1,4 +1,5 @@
 import type { DocumentData } from '../types'
+import { normalizeIgnored, normalizeRules } from './conflicts'
 
 const STORAGE_KEY = 'anchor-annotation-console:v1'
 
@@ -6,7 +7,7 @@ export function loadDocument(): DocumentData | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return null
-    const data = JSON.parse(raw) as DocumentData
+    const data = JSON.parse(raw) as Partial<DocumentData>
     if (typeof data.text !== 'string' || !Array.isArray(data.annotations)) {
       return null
     }
@@ -14,6 +15,9 @@ export function loadDocument(): DocumentData | null {
       title: typeof data.title === 'string' ? data.title : '未命名文档',
       text: data.text,
       annotations: data.annotations,
+      // 旧版本数据没有冲突配置：无损补空
+      conflictRules: normalizeRules(data.conflictRules),
+      ignoredConflicts: normalizeIgnored(data.ignoredConflicts),
       updatedAt: data.updatedAt ?? Date.now(),
     }
   } catch {
